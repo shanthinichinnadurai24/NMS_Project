@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Network Metrics{% endblock %}
+{% block page_title %}📈 Network Metrics{% endblock %}
+{% block page_subtitle %}Historical network performance data and trend analysis{% endblock %}
+
+{% block content %}
+<!-- ── Filters ──────────────────────────────────────── -->
+<div class="card mb-24">
+  <div class="card-header">
+    <div class="card-title">🔎 Filter Metrics</div>
+  </div>
+  <div class="card-body">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Device</label>
+        <select id="filterDevice" class="form-select" onchange="loadCharts()">
+          <option value="">All Devices</option>
+          {% for d in devices %}
+          <option value="{{ d.id }}">{{ d.device_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Start Date</label>
+        <input type="date" id="filterStart" class="form-control" onchange="loadCharts()"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">End Date</label>
+        <input type="date" id="filterEnd" class="form-control" onchange="loadCharts()"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Metric Focus</label>
+        <select id="filterMetric" class="form-select" onchange="highlightMetric()">
+          <option value="all">All Metrics</option>
+          <option value="cpu">CPU Utilization</option>
+          <option value="memory">Memory Utilization</option>
+          <option value="bandwidth">Bandwidth Utilization</option>
+          <option value="traffic">Network Traffic</option>
+          <option value="latency">Latency</option>
+          <option value="packet_loss">Packet Loss</option>
+        </select>
+      </div>
+      <div class="form-group" style="display:flex;align-items:flex-end;">
+        <button class="btn btn-primary" style="width:100%;" onclick="loadCharts()">Apply Filters</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Charts ─────────────────────────────────────── -->
+<div class="chart-grid mb-24">
+  <div class="card">
+    <div class="card-header"><div class="card-title">💻 CPU Utilization</div></div>
+    <div class="card-body"><div class="chart-container"><canvas id="cpuMetricChart"></canvas></div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">🧠 Memory Utilization</div></div>
+    <div class="card-body"><div class="chart-container"><canvas id="memMetricChart"></canvas></div></div>
+  </div>
+</div>
+<div class="chart-grid mb-24">
+  <div class="card">
+    <div class="card-header"><div class="card-title">📡 Bandwidth Utilization</div></div>
+    <div class="card-body"><div class="chart-container"><canvas id="bwMetricChart"></canvas></div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">⏱️ Latency &amp; Packet Loss</div></div>
+    <div class="card-body"><div class="chart-container"><canvas id="latencyChart"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ── Table ─────────────────────────────────────── -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">📋 Metrics Data Table</div>
+    <span id="tableCount" class="badge badge-secondary">Loading…</span>
+  </div>
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Timestamp</th><th>Device</th>
+          <th>CPU %</th><th>Memory %</th><th>Bandwidth %</th>
+          <th>Traffic (Mb)</th><th>Latency (ms)</th><th>Pkt Loss %</th><th>Storage %</th>
+        </tr>
+      </thead>
+      <tbody id="metricsBody">
+        <tr><td colspan="9"><div class="loading-state"><div class="spinner"></div>Loading metrics…</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let charts = {};
+
+function buildLine(id, labels, datasets, isPercent=true) {
+  if(charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive:true, maintainAspectRatio:true,
+      interaction:{ mode:'index', intersect:false },
+      scales: {
+        x:{ ticks:{maxTicksLimit:8, maxRotation:0} },
+        y:{ min:0, ticks:{ callback: v => isPercent ? v+'%' : v } }
+      },
+      plugins:{ legend:{ position:'top' } }
+    }
+  });
+}
+
+async function loadCharts() {
+  const device = document.getElementById('filterDevice').value;
+  const start  = document.getElementById('filterStart').value;
+  const end    = document.getElementById('filterEnd').value;
+
+  let url = '/api/metrics?limit=200';
+  if(device) url += `&device_id=${device}`;
+  if(start)  url += `&start=${start}`;
+  if(end)    url += `&end=${end} 23:59:59`;
+
+  const r = await fetch(url);
+  const j = await r.json();
+  const data = (j.data||[]).reverse();
+
+  const labels   = data.map(d => d.timestamp.slice(5,16));
+  const devNames = [...new Set(data.map(d=>d.device_name))];
+
+  // Group by device for multi-line charts
+  const colours = ['#2f81f7','#a371f7','#3fb950','#d29922','#f85149','#39d353','#e3b341','#79c0ff'];
+
+  function buildDatasets(field) {
+    return devNames.map((dn, i) => {
+      const pts = data.map(d => d.device_name===dn ? +(d[field]||0).toFixed(2) : null);
+      return { label:dn.replace(/^(Core-|Dist-|Edge-|App-|WiFi-|DB-)/,'').substring(0,10),
+               data:pts, borderColor:colours[i%colours.length],
+               backgroundColor:'transparent', tension:0.4, pointRadius:0, borderWidth:1.5, spanGaps:true };
+    });
+  }
+
+  buildLine('cpuMetricChart', labels, buildDatasets('cpu_utilization'), true);
+  buildLine('memMetricChart', labels, buildDatasets('memory_utilization'), true);
+  buildLine('bwMetricChart',  labels, buildDatasets('bandwidth_utilization'), true);
+
+  // Latency & packet loss (dual axis)
+  const latPts = data.map(d=>(+d.latency||0).toFixed(2));
+  const plPts  = data.map(d=>(+d.packet_loss||0).toFixed(3));
+  if(charts['latencyChart']) charts['latencyChart'].destroy();
+  charts['latencyChart'] = new Chart(document.getElementById('latencyChart'), {
+    type:'line', data:{
+      labels,
+      datasets:[
+        { label:'Latency (ms)', data:latPts, borderColor:'#d29922', backgroundColor:'transparent', tension:0.4, pointRadius:0, borderWidth:1.5, yAxisID:'y' },
+        { label:'Pkt Loss (%)', data:plPts,  borderColor:'#f85149', backgroundColor:'transparent', tension:0.4, pointRadius:0, borderWidth:1.5, yAxisID:'y1' },
+      ]
+    },
+    options:{ responsive:true, maintainAspectRatio:true,
+      scales:{ x:{ticks:{maxTicksLimit:8,maxRotation:0}},
+               y:{ position:'left',  ticks:{callback:v=>v+'ms'} },
+               y1:{ position:'right', grid:{drawOnChartArea:false}, ticks:{callback:v=>v+'%'} }
+      },
+      plugins:{ legend:{position:'top'} }
+    }
+  });
+
+  // Table
+  document.getElementById('tableCount').textContent = `${data.length} records`;
+  const tbody = document.getElementById('metricsBody');
+  if(data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty-state"><div class="empty-icon">📭</div><p>No data for these filters.</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.slice(-100).reverse().map(d => `
+    <tr>
+      <td class="text-muted">${d.timestamp}</td>
+      <td><strong>${d.device_name}</strong></td>
+      <td><span class="${d.cpu_utilization>=85?'text-danger':d.cpu_utilization>=70?'text-warning':'text-success'}">${(+d.cpu_utilization).toFixed(1)}%</span></td>
+      <td><span class="${d.memory_utilization>=85?'text-danger':d.memory_utilization>=70?'text-warning':'text-success'}">${(+d.memory_utilization).toFixed(1)}%</span></td>
+      <td><span class="${d.bandwidth_utilization>=85?'text-danger':d.bandwidth_utilization>=70?'text-warning':'text-success'}">${(+d.bandwidth_utilization).toFixed(1)}%</span></td>
+      <td>${(+d.network_traffic).toFixed(1)}</td>
+      <td>${(+d.latency).toFixed(2)} ms</td>
+      <td>${(+d.packet_loss).toFixed(3)}%</td>
+      <td>${(+d.storage_utilization).toFixed(1)}%</td>
+    </tr>`).join('');
+}
+
+// Do not set restrictive default dates so all historical dataset records load automatically
+loadCharts();
+</script>
+{% endblock %}

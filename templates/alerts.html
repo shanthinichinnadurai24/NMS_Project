@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+{% block title %}Risk & Alerts{% endblock %}
+{% block page_title %}🚨 Risk & Alerts{% endblock %}
+{% block page_subtitle %}AI-driven risk detection and capacity warning alerts{% endblock %}
+
+{% block content %}
+<!-- ── Controls ──────────────────────────────────── -->
+<div class="section-header mb-16">
+  <div>
+    <div class="section-title">Active Alerts</div>
+    <div class="section-sub">Risk levels: LOW → MEDIUM → HIGH → CRITICAL</div>
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+    <select id="riskFilter" class="form-select" style="width:140px;" onchange="filterAlerts()">
+      <option value="">All Levels</option>
+      <option>LOW</option><option>MEDIUM</option><option>HIGH</option><option>CRITICAL</option>
+    </select>
+    <select id="statusFilter" class="form-select" style="width:140px;" onchange="loadAlerts()">
+      <option value="Active">Active</option>
+      <option value="Resolved">Resolved</option>
+    </select>
+    <button class="btn btn-warning" onclick="generateAndReload()">🔄 Regenerate Alerts</button>
+  </div>
+</div>
+
+<!-- ── Risk Summary ───────────────────────────────── -->
+<div class="metric-grid mb-24" style="grid-template-columns:repeat(4,1fr);" id="riskSummary">
+  <div class="metric-card green"><div class="metric-label">LOW</div><div class="metric-value green" id="cntLow">—</div><div class="metric-sub">Low risk alerts</div></div>
+  <div class="metric-card blue"><div class="metric-label">MEDIUM</div><div class="metric-value blue" id="cntMed">—</div><div class="metric-sub">Medium risk alerts</div></div>
+  <div class="metric-card yellow"><div class="metric-label">HIGH</div><div class="metric-value yellow" id="cntHigh">—</div><div class="metric-sub">High risk alerts</div></div>
+  <div class="metric-card red"><div class="metric-label">CRITICAL</div><div class="metric-value red" id="cntCrit">—</div><div class="metric-sub">Critical alerts</div></div>
+</div>
+
+<!-- ── Alert Table ────────────────────────────────── -->
+<div class="card mb-24" id="alertsCard">
+  <div class="card-header">
+    <div class="card-title">📋 Alert Details</div>
+    <span id="alertCount" class="badge badge-secondary">Loading…</span>
+  </div>
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th><th>Device</th><th>Resource</th>
+          <th>Current</th><th>Predicted</th><th>Risk</th>
+          <th>Message</th><th>Timestamp</th><th>Recommendation</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="alertsBody">
+        <tr><td colspan="10"><div class="loading-state"><div class="spinner"></div>Loading alerts…</div></td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Risk Chart ─────────────────────────────────── -->
+<div class="chart-grid mb-24">
+  <div class="card">
+    <div class="card-header"><div class="card-title">🎯 Risk Level Distribution</div></div>
+    <div class="card-body" style="display:flex;align-items:center;justify-content:center;">
+      <div class="chart-container" style="max-width:280px;"><canvas id="riskDistChart"></canvas></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">🖧 Alerts by Device</div></div>
+    <div class="card-body"><div class="chart-container"><canvas id="deviceAlertChart"></canvas></div></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allAlerts = [];
+let riskDistChart = null, devAlertChart = null;
+
+const riskPill = r => ({
+  LOW:      '<span class="risk-pill risk-low">⬤ LOW</span>',
+  MEDIUM:   '<span class="risk-pill risk-medium">⬤ MEDIUM</span>',
+  HIGH:     '<span class="risk-pill risk-high">⬤ HIGH</span>',
+  CRITICAL: '<span class="risk-pill risk-critical">⬤ CRITICAL</span>',
+}[r] || '<span class="risk-pill">—</span>');
+
+async function loadAlerts() {
+  const status = document.getElementById('statusFilter').value;
+  document.getElementById('alertsBody').innerHTML =
+    '<tr><td colspan="10"><div class="loading-state"><div class="spinner"></div>Loading…</div></td></tr>';
+
+  const r = await fetch(`/api/alerts?status=${status}`);
+  const j = await r.json();
+  allAlerts = j.data || [];
+
+  // Counts
+  const cnt = {LOW:0, MEDIUM:0, HIGH:0, CRITICAL:0};
+  allAlerts.forEach(a => cnt[a.risk_level] = (cnt[a.risk_level]||0)+1);
+  document.getElementById('cntLow').textContent  = cnt.LOW;
+  document.getElementById('cntMed').textContent  = cnt.MEDIUM;
+  document.getElementById('cntHigh').textContent = cnt.HIGH;
+  document.getElementById('cntCrit').textContent = cnt.CRITICAL;
+
+  filterAlerts();
+  renderCharts(allAlerts);
+}
+
+function filterAlerts() {
+  const level = document.getElementById('riskFilter').value;
+  const filtered = level ? allAlerts.filter(a=>a.risk_level===level) : allAlerts;
+  renderTable(filtered);
+}
+
+function renderTable(data) {
+  document.getElementById('alertCount').textContent = `${data.length} alerts`;
+  const tbody = document.getElementById('alertsBody');
+  if(data.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10"><div class="empty-state"><div class="empty-icon">✅</div><p>No alerts found for the selected filter.</p></div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = data.map(a => `
+    <tr>
+      <td class="text-muted">#${a.id}</td>
+      <td><strong>${a.device_name||'—'}</strong></td>
+      <td><span class="badge badge-info">${a.resource||'—'}</span></td>
+      <td><span class="${+a.current_value>=85?'text-danger':+a.current_value>=70?'text-warning':'text-success'}">${(+a.current_value||0).toFixed(1)}%</span></td>
+      <td><span class="${+a.predicted_value>=85?'text-danger':+a.predicted_value>=70?'text-warning':'text-success'}">${(+a.predicted_value||0).toFixed(1)}%</span></td>
+      <td>${riskPill(a.risk_level)}</td>
+      <td class="fs-12" style="max-width:220px;overflow:hidden;text-overflow:ellipsis;">${a.message||'—'}</td>
+      <td class="text-muted fs-12">${(a.timestamp||'').slice(0,16)}</td>
+      <td class="fs-12" style="max-width:200px;color:var(--text-secondary);">${a.recommendation||'—'}</td>
+      <td>
+        ${a.status==='Active'?`<button class="btn btn-success btn-sm" onclick="resolveAlert(${a.id})">✓ Resolve</button>`:'<span class="text-muted fs-12">Resolved</span>'}
+      </td>
+    </tr>`).join('');
+}
+
+function renderCharts(data) {
+  const cnt = {LOW:0, MEDIUM:0, HIGH:0, CRITICAL:0};
+  data.forEach(a => cnt[a.risk_level] = (cnt[a.risk_level]||0)+1);
+
+  if(riskDistChart) riskDistChart.destroy();
+  riskDistChart = new Chart(document.getElementById('riskDistChart'), {
+    type:'doughnut',
+    data:{ labels:['Low','Medium','High','Critical'],
+      datasets:[{ data:[cnt.LOW,cnt.MEDIUM,cnt.HIGH,cnt.CRITICAL],
+        backgroundColor:['#3fb950','#2f81f7','#d29922','#f85149'],
+        borderWidth:2, borderColor:'#1c2128' }]},
+    options:{ responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{position:'bottom'} }, cutout:'60%' }
+  });
+
+  // Alerts by device
+  const devMap = {};
+  data.forEach(a => devMap[a.device_name] = (devMap[a.device_name]||0)+1);
+  const devLabels = Object.keys(devMap).map(k=>k.replace(/^(Core-|Dist-|Edge-|App-|WiFi-|DB-)/,'').substring(0,10));
+  const devVals   = Object.values(devMap);
+
+  if(devAlertChart) devAlertChart.destroy();
+  devAlertChart = new Chart(document.getElementById('deviceAlertChart'), {
+    type:'bar',
+    data:{ labels:devLabels, datasets:[{ label:'Alerts', data:devVals,
+      backgroundColor:'rgba(248,81,73,0.65)', borderRadius:4 }]},
+    options:{ responsive:true, maintainAspectRatio:true,
+      scales:{ x:{ticks:{maxRotation:40}}, y:{ticks:{stepSize:1}} },
+      plugins:{ legend:{display:false} }
+    }
+  });
+}
+
+async function resolveAlert(id) {
+  const r = await fetch(`/api/alerts/${id}/resolve`, {method:'POST'});
+  const j = await r.json();
+  if(j.status==='ok') {
+    showToast('Resolved', 'Alert marked as resolved.', 'success');
+    loadAlerts();
+    loadAlertBadge();
+  } else {
+    showToast('Error', j.message, 'error');
+  }
+}
+
+async function generateAndReload() {
+  showToast('Generating…', 'Running AI forecast to detect risks…', 'info');
+  const r = await fetch('/api/alerts/generate', {method:'POST'});
+  const j = await r.json();
+  if(j.status==='ok') {
+    showToast('Done', j.message, 'success');
+    loadAlerts();
+    loadAlertBadge();
+  } else {
+    showToast('Error', j.message, 'error');
+  }
+}
+
+loadAlerts();
+</script>
+{% endblock %}

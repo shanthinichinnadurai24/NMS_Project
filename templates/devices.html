@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}Network Devices{% endblock %}
+{% block page_title %}🖧 Network Devices{% endblock %}
+{% block page_subtitle %}Manage and monitor all network infrastructure devices{% endblock %}
+
+{% block content %}
+<!-- ── Controls ────────────────────────────────────── -->
+<div class="section-header mb-16">
+  <div>
+    <div class="section-title">Device Inventory</div>
+    <div class="section-sub">{{ devices|length }} devices registered</div>
+  </div>
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <div class="search-bar">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="searchInput" class="form-control" placeholder="Search devices…" style="width:220px;padding-left:36px;" oninput="filterDevices()"/>
+    </div>
+    <select id="typeFilter" class="form-select" style="width:140px;" onchange="filterDevices()">
+      <option value="">All Types</option>
+      <option>Router</option>
+      <option>Switch</option>
+      <option>Firewall</option>
+      <option>Server</option>
+      <option>Access Point</option>
+    </select>
+    <button class="btn btn-primary" onclick="openAddModal()">➕ Add Device</button>
+  </div>
+</div>
+
+<!-- ── Devices Table ──────────────────────────────── -->
+<div class="card mb-24">
+  <div class="table-container">
+    <table id="devicesTable">
+      <thead>
+        <tr>
+          <th>ID</th><th>Device Name</th><th>Type</th><th>Location</th>
+          <th>IP Address</th><th>CPU Cap</th><th>Mem Cap (GB)</th><th>BW Cap (Mbps)</th>
+          <th>CPU Now</th><th>Mem Now</th><th>BW Now</th><th>Status</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="devicesBody">
+        {% for d in devices %}
+        <tr data-name="{{ d.device_name|lower }}" data-type="{{ d.device_type }}">
+          <td class="text-muted">{{ d.id }}</td>
+          <td><strong>{{ d.device_name }}</strong></td>
+          <td><span class="badge badge-info">{{ d.device_type }}</span></td>
+          <td>{{ d.location }}</td>
+          <td class="text-muted">{{ d.ip_address }}</td>
+          <td>{{ d.cpu_capacity }}%</td>
+          <td>{{ d.memory_capacity }} GB</td>
+          <td>{{ d.bandwidth_capacity }} Mbps</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;min-width:90px;">
+              <div class="progress-bar-wrap" style="flex:1;"><div class="progress-bar-fill {% if d.cpu_current >= 85 %}red{% elif d.cpu_current >= 70 %}yellow{% else %}green{% endif %}" style="width:{{ d.cpu_current }}%"></div></div>
+              <span class="fs-12">{{ d.cpu_current }}%</span>
+            </div>
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;min-width:90px;">
+              <div class="progress-bar-wrap" style="flex:1;"><div class="progress-bar-fill {% if d.mem_current >= 85 %}red{% elif d.mem_current >= 70 %}yellow{% else %}green{% endif %}" style="width:{{ d.mem_current }}%"></div></div>
+              <span class="fs-12">{{ d.mem_current }}%</span>
+            </div>
+          </td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px;min-width:90px;">
+              <div class="progress-bar-wrap" style="flex:1;"><div class="progress-bar-fill {% if d.bw_current >= 85 %}red{% elif d.bw_current >= 70 %}yellow{% else %}blue{% endif %}" style="width:{{ d.bw_current }}%"></div></div>
+              <span class="fs-12">{{ d.bw_current }}%</span>
+            </div>
+          </td>
+          <td>
+            <span class="badge {% if d.status == 'Active' %}badge-success{% else %}badge-secondary{% endif %}">
+              {{ d.status }}
+            </span>
+          </td>
+          <td>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-secondary btn-sm" onclick="openEditModal({{ d.id }})">✏️</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteDevice({{ d.id }}, '{{ d.device_name }}')">🗑️</button>
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="13"><div class="empty-state"><div class="empty-icon">🖧</div><p>No devices found. Add your first device.</p></div></td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Add/Edit Modal ─────────────────────────────── -->
+<div class="modal-overlay" id="deviceModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Add Device</div>
+      <span class="modal-close" onclick="closeModal()">✕</span>
+    </div>
+    <form id="deviceForm" onsubmit="submitDevice(event)">
+      <input type="hidden" id="editDeviceId"/>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Device Name *</label>
+          <input type="text" id="f_name" class="form-control" placeholder="Core-Router-01" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Device Type *</label>
+          <select id="f_type" class="form-select" required>
+            <option value="">Select type…</option>
+            <option>Router</option><option>Switch</option><option>Firewall</option>
+            <option>Server</option><option>Access Point</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Location</label>
+          <input type="text" id="f_loc" class="form-control" placeholder="DataCenter-A"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">IP Address *</label>
+          <input type="text" id="f_ip" class="form-control" placeholder="192.168.1.1" required/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">CPU Capacity (%)</label>
+          <input type="number" id="f_cpu" class="form-control" value="100" min="1" max="100"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Memory Capacity (GB)</label>
+          <input type="number" id="f_mem" class="form-control" value="32" min="1"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bandwidth Capacity (Mbps)</label>
+          <input type="number" id="f_bw" class="form-control" value="1000" min="1"/>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Status</label>
+          <select id="f_status" class="form-select">
+            <option>Active</option><option>Maintenance</option><option>Offline</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;">
+        <button type="button" class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button type="submit" class="btn btn-primary">💾 Save Device</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterDevices() {
+  const q    = document.getElementById('searchInput').value.toLowerCase();
+  const type = document.getElementById('typeFilter').value;
+  document.querySelectorAll('#devicesBody tr').forEach(row => {
+    const nm = row.dataset.name || '';
+    const tp = row.dataset.type || '';
+    row.style.display = (nm.includes(q) && (!type || tp === type)) ? '' : 'none';
+  });
+}
+
+function openAddModal() {
+  document.getElementById('modalTitle').textContent = 'Add Device';
+  document.getElementById('editDeviceId').value = '';
+  document.getElementById('deviceForm').reset();
+  document.getElementById('deviceModal').classList.add('show');
+}
+
+async function openEditModal(id) {
+  const r = await fetch(`/api/devices/${id}`);
+  const j = await r.json();
+  if(j.status !== 'ok') return showToast('Error', j.message, 'error');
+  const d = j.data;
+  document.getElementById('modalTitle').textContent = 'Edit Device';
+  document.getElementById('editDeviceId').value = id;
+  document.getElementById('f_name').value   = d.device_name;
+  document.getElementById('f_type').value   = d.device_type;
+  document.getElementById('f_loc').value    = d.location;
+  document.getElementById('f_ip').value     = d.ip_address;
+  document.getElementById('f_cpu').value    = d.cpu_capacity;
+  document.getElementById('f_mem').value    = d.memory_capacity;
+  document.getElementById('f_bw').value     = d.bandwidth_capacity;
+  document.getElementById('f_status').value = d.status;
+  document.getElementById('deviceModal').classList.add('show');
+}
+
+function closeModal() { document.getElementById('deviceModal').classList.remove('show'); }
+
+async function submitDevice(e) {
+  e.preventDefault();
+  const id = document.getElementById('editDeviceId').value;
+  const body = {
+    device_name:       document.getElementById('f_name').value,
+    device_type:       document.getElementById('f_type').value,
+    location:          document.getElementById('f_loc').value,
+    ip_address:        document.getElementById('f_ip').value,
+    cpu_capacity:      document.getElementById('f_cpu').value,
+    memory_capacity:   document.getElementById('f_mem').value,
+    bandwidth_capacity:document.getElementById('f_bw').value,
+    status:            document.getElementById('f_status').value,
+  };
+  const url    = id ? `/api/devices/${id}` : '/api/devices';
+  const method = id ? 'PUT' : 'POST';
+  const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  const j = await r.json();
+  if(j.status === 'ok') {
+    showToast('Success', id ? 'Device updated.' : 'Device added.', 'success');
+    closeModal();
+    setTimeout(()=>location.reload(), 1000);
+  } else {
+    showToast('Error', j.message, 'error');
+  }
+}
+
+async function deleteDevice(id, name) {
+  if(!confirm(`Delete device "${name}"? This will remove all associated metrics.`)) return;
+  const r = await fetch(`/api/devices/${id}`, {method:'DELETE'});
+  const j = await r.json();
+  if(j.status === 'ok') {
+    showToast('Deleted', `${name} removed.`, 'success');
+    setTimeout(()=>location.reload(), 1000);
+  } else {
+    showToast('Error', j.message, 'error');
+  }
+}
+</script>
+{% endblock %}

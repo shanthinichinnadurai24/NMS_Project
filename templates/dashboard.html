@@ -1,0 +1,288 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}📊 Dashboard{% endblock %}
+{% block page_subtitle %}Real-time Network Capacity Overview{% endblock %}
+
+{% block content %}
+<!-- ── Metric Cards ───────────────────────────────── -->
+<div class="metric-grid">
+  <div class="metric-card blue">
+    <div class="metric-icon">🖧</div>
+    <div class="metric-label">Total Devices</div>
+    <div class="metric-value blue">{{ total_devices }}</div>
+    <div class="metric-sub">Monitored network nodes</div>
+  </div>
+  <div class="metric-card green">
+    <div class="metric-icon">💻</div>
+    <div class="metric-label">Avg CPU Utilization</div>
+    <div class="metric-value green">{{ avg_cpu }}%</div>
+    <div class="metric-sub">Across all devices</div>
+  </div>
+  <div class="metric-card yellow">
+    <div class="metric-icon">🧠</div>
+    <div class="metric-label">Avg Memory Usage</div>
+    <div class="metric-value yellow">{{ avg_mem }}%</div>
+    <div class="metric-sub">Across all devices</div>
+  </div>
+  <div class="metric-card purple">
+    <div class="metric-icon">📡</div>
+    <div class="metric-label">Avg Bandwidth</div>
+    <div class="metric-value purple">{{ avg_bw }}%</div>
+    <div class="metric-sub">Utilization rate</div>
+  </div>
+  <div class="metric-card cyan">
+    <div class="metric-icon">🌐</div>
+    <div class="metric-label">Avg Network Traffic</div>
+    <div class="metric-value cyan">{{ avg_trf }}</div>
+    <div class="metric-sub">Mbps average</div>
+  </div>
+  <div class="metric-card red">
+    <div class="metric-icon">⚠️</div>
+    <div class="metric-label">Devices at Risk</div>
+    <div class="metric-value red">{{ devices_at_risk }}</div>
+    <div class="metric-sub">Above 70% utilization</div>
+  </div>
+  <div class="metric-card {% if active_alerts > 0 %}red{% else %}green{% endif %}">
+    <div class="metric-icon">🚨</div>
+    <div class="metric-label">Active Alerts</div>
+    <div class="metric-value {% if active_alerts > 0 %}red{% else %}green{% endif %}">{{ active_alerts }}</div>
+    <div class="metric-sub">Capacity warnings</div>
+  </div>
+  <div class="metric-card {{ health_color }}">
+    <div class="metric-icon">❤️</div>
+    <div class="metric-label">Network Health</div>
+    <div class="metric-value {{ health_color }}" style="font-size:20px;font-weight:800;">{{ health }}</div>
+    <div class="metric-sub">Overall network status</div>
+  </div>
+</div>
+
+<!-- ── Charts Row 1 ──────────────────────────────── -->
+<div class="chart-grid mb-24">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">💻</span>CPU Utilization Trend</div>
+      <span class="badge badge-info">7 Days</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-container"><canvas id="cpuChart"></canvas></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">🧠</span>Memory Utilization Trend</div>
+      <span class="badge badge-info">7 Days</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-container"><canvas id="memChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Charts Row 2 ──────────────────────────────── -->
+<div class="chart-grid mb-24">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">📡</span>Bandwidth Utilization Trend</div>
+      <span class="badge badge-info">7 Days</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-container"><canvas id="bwChart"></canvas></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">🌐</span>Network Traffic Trend</div>
+      <span class="badge badge-info">7 Days</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-container"><canvas id="trafficChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Device Utilization + Risk Distribution ────── -->
+<div class="chart-grid mb-24">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">🖧</span>Device-wise CPU/Memory Usage</div>
+      <span class="badge badge-secondary">Current</span>
+    </div>
+    <div class="card-body">
+      <div class="chart-container"><canvas id="deviceChart"></canvas></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title"><span class="icon">🎯</span>Resource Risk Distribution</div>
+      <span class="badge badge-secondary">Current</span>
+    </div>
+    <div class="card-body" style="display:flex;align-items:center;justify-content:center;">
+      <div class="chart-container" style="max-width:300px;"><canvas id="riskChart"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Quick Actions ─────────────────────────────── -->
+<div class="card mb-24">
+  <div class="card-header">
+    <div class="card-title">⚡ Quick Actions</div>
+  </div>
+  <div class="card-body" style="display:flex;gap:12px;flex-wrap:wrap;">
+    <a href="{{ url_for('forecasting_page') }}" class="btn btn-primary">🤖 Run AI Forecast</a>
+    <button class="btn btn-warning" onclick="generateAlerts()">🚨 Generate Alerts</button>
+    <a href="{{ url_for('capacity_page') }}" class="btn btn-secondary">⚡ View Capacity Plan</a>
+    <a href="{{ url_for('reports_page') }}" class="btn btn-secondary">📑 Generate Report</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const mkLine = (ctx, labels, datasets) => new Chart(ctx, {
+  type: 'line',
+  data: { labels, datasets },
+  options: {
+    responsive: true,
+    maintainAspectRatio: true,
+    interaction: { mode: 'index', intersect: false },
+    scales: {
+      x: { ticks: { maxTicksLimit: 7, maxRotation: 0 } },
+      y: { min: 0, max: 100, ticks: { callback: v => v + '%' } }
+    },
+    plugins: { legend: { display: false } }
+  }
+});
+
+async function loadDashboard() {
+  const r = await fetch('/api/dashboard/charts');
+  const j = await r.json();
+  const data = j.data || [];
+
+  // Sample every 3rd point for cleaner charts
+  const sampled = data.filter((_,i) => i % 2 === 0);
+  const labels  = sampled.map(d => d.timestamp.slice(5,16));
+  const cpu     = sampled.map(d => +(d.avg_cpu||0).toFixed(1));
+  const mem     = sampled.map(d => +(d.avg_mem||0).toFixed(1));
+  const bw      = sampled.map(d => +(d.avg_bw||0).toFixed(1));
+  const traffic = sampled.map(d => +(d.total_traffic||0).toFixed(1));
+
+  const grad = (ctx, c1, c2) => {
+    const g = ctx.createLinearGradient(0,0,0,220);
+    g.addColorStop(0, c1); g.addColorStop(1, c2);
+    return g;
+  };
+
+  // CPU
+  const cpuCtx = document.getElementById('cpuChart').getContext('2d');
+  mkLine(cpuCtx, labels, [{
+    data: cpu, borderColor: '#2f81f7',
+    backgroundColor: grad(cpuCtx,'rgba(47,129,247,0.3)','rgba(47,129,247,0.0)'),
+    fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2
+  }]);
+
+  // Memory
+  const memCtx = document.getElementById('memChart').getContext('2d');
+  const mc = new Chart(memCtx, {
+    type:'line', data:{ labels, datasets:[{
+      data: mem, borderColor:'#a371f7',
+      backgroundColor: grad(memCtx,'rgba(163,113,247,0.3)','rgba(163,113,247,0.0)'),
+      fill:true, tension:0.4, pointRadius:0, borderWidth:2
+    }]},
+    options:{ responsive:true, maintainAspectRatio:true,
+      scales:{ x:{ticks:{maxTicksLimit:7,maxRotation:0}}, y:{min:0,max:100,ticks:{callback:v=>v+'%'}} },
+      plugins:{ legend:{display:false} }
+    }
+  });
+
+  // Bandwidth
+  const bwCtx = document.getElementById('bwChart').getContext('2d');
+  new Chart(bwCtx, {
+    type:'line', data:{ labels, datasets:[{
+      data: bw, borderColor:'#39d353',
+      backgroundColor: grad(bwCtx,'rgba(57,211,83,0.3)','rgba(57,211,83,0.0)'),
+      fill:true, tension:0.4, pointRadius:0, borderWidth:2
+    }]},
+    options:{ responsive:true, maintainAspectRatio:true,
+      scales:{ x:{ticks:{maxTicksLimit:7,maxRotation:0}}, y:{min:0,max:100,ticks:{callback:v=>v+'%'}} },
+      plugins:{ legend:{display:false} }
+    }
+  });
+
+  // Traffic (no percentage cap)
+  const trCtx = document.getElementById('trafficChart').getContext('2d');
+  new Chart(trCtx, {
+    type:'line', data:{ labels, datasets:[{
+      data: traffic, borderColor:'#d29922',
+      backgroundColor: grad(trCtx,'rgba(210,153,34,0.3)','rgba(210,153,34,0.0)'),
+      fill:true, tension:0.4, pointRadius:0, borderWidth:2
+    }]},
+    options:{ responsive:true, maintainAspectRatio:true,
+      scales:{ x:{ticks:{maxTicksLimit:7,maxRotation:0}},
+               y:{ ticks:{callback:v=>v+' Mb'} } },
+      plugins:{ legend:{display:false} }
+    }
+  });
+}
+
+async function loadDeviceChart() {
+  const r = await fetch('/api/dashboard/device_utilization');
+  const j = await r.json();
+  const data = j.data || [];
+  const labels = data.map(d => d.device_name.replace(/^(Core-|Dist-|Edge-|App-|WiFi-|DB-)/,'').substring(0,12));
+  new Chart(document.getElementById('deviceChart'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'CPU %',    data: data.map(d=>d.cpu), backgroundColor: 'rgba(47,129,247,0.7)',  borderRadius:4 },
+        { label: 'Memory %', data: data.map(d=>d.mem), backgroundColor: 'rgba(163,113,247,0.7)', borderRadius:4 },
+        { label: 'BW %',     data: data.map(d=>d.bw),  backgroundColor: 'rgba(57,211,83,0.7)',   borderRadius:4 },
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:true,
+      scales:{ x:{ticks:{maxRotation:30}}, y:{min:0,max:100,ticks:{callback:v=>v+'%'}} },
+      plugins:{ legend:{ position:'top' } }
+    }
+  });
+}
+
+async function loadRiskChart() {
+  const r   = await fetch('/api/alerts?status=Active');
+  const j   = await r.json();
+  const alerts = j.data || [];
+  const counts = { LOW:0, MEDIUM:0, HIGH:0, CRITICAL:0 };
+  alerts.forEach(a => counts[a.risk_level] = (counts[a.risk_level]||0)+1);
+  // If no alerts, show dummy safe state
+  const vals   = [counts.LOW||1, counts.MEDIUM, counts.HIGH, counts.CRITICAL];
+  new Chart(document.getElementById('riskChart'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Low', 'Medium', 'High', 'Critical'],
+      datasets: [{ data: vals, backgroundColor: ['#3fb950','#2f81f7','#d29922','#f85149'],
+                   borderWidth: 2, borderColor: '#1c2128' }]
+    },
+    options: { responsive:true, maintainAspectRatio:true,
+      plugins:{ legend:{position:'bottom'} },
+      cutout:'65%'
+    }
+  });
+}
+
+async function generateAlerts() {
+  showToast('Generating Alerts', 'Running AI forecast for all devices…', 'info');
+  const r = await fetch('/api/alerts/generate', {method:'POST'});
+  const j = await r.json();
+  if(j.status === 'ok') {
+    showToast('Alerts Generated', j.message, 'success');
+    loadAlertBadge();
+  } else {
+    showToast('Error', j.message, 'error');
+  }
+}
+
+loadDashboard();
+loadDeviceChart();
+loadRiskChart();
+</script>
+{% endblock %}

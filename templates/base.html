@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}NCP System{% endblock %} — AI Network Capacity Planner</title>
+  <meta name="description" content="AI-Based Network Capacity Planning and Resource Forecasting System"/>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}"/>
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css"/>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  {% block head %}{% endblock %}
+</head>
+<body>
+<div class="app-wrapper">
+
+  <!-- ── Sidebar ─────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-brand">
+      <div class="brand-icon">🧠</div>
+      <div>
+        <div class="brand-text">NCP System</div>
+        <div class="brand-sub">AI Network Planner</div>
+      </div>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Main</div>
+      <a href="{{ url_for('dashboard') }}" class="nav-item {% if request.endpoint=='dashboard' %}active{% endif %}">
+        <span class="nav-icon">📊</span> Dashboard
+      </a>
+      <a href="{{ url_for('devices_page') }}" class="nav-item {% if request.endpoint=='devices_page' %}active{% endif %}">
+        <span class="nav-icon">🖧</span> Network Devices
+      </a>
+      <a href="{{ url_for('metrics_page') }}" class="nav-item {% if request.endpoint=='metrics_page' %}active{% endif %}">
+        <span class="nav-icon">📈</span> Network Metrics
+      </a>
+
+      <div class="nav-section-label">AI & Planning</div>
+      <a href="{{ url_for('forecasting_page') }}" class="nav-item {% if request.endpoint=='forecasting_page' %}active{% endif %}">
+        <span class="nav-icon">🤖</span> AI Forecasting
+      </a>
+      <a href="{{ url_for('capacity_page') }}" class="nav-item {% if request.endpoint=='capacity_page' %}active{% endif %}">
+        <span class="nav-icon">⚡</span> Capacity Planning
+      </a>
+      <a href="{{ url_for('alerts_page') }}" class="nav-item {% if request.endpoint=='alerts_page' %}active{% endif %}">
+        <span class="nav-icon">🚨</span> Risk &amp; Alerts
+        <span class="nav-badge" id="alert-badge" style="display:none">0</span>
+      </a>
+
+      <div class="nav-section-label">Insights</div>
+      <a href="{{ url_for('performance_page') }}" class="nav-item {% if request.endpoint=='performance_page' %}active{% endif %}">
+        <span class="nav-icon">🧪</span> AI Model Performance
+      </a>
+      <a href="{{ url_for('reports_page') }}" class="nav-item {% if request.endpoint=='reports_page' %}active{% endif %}">
+        <span class="nav-icon">📑</span> Reports
+      </a>
+      <a href="{{ url_for('settings_page') }}" class="nav-item {% if request.endpoint=='settings_page' %}active{% endif %}">
+        <span class="nav-icon">⚙️</span> Settings
+      </a>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="status-dot online"></span>
+        <span>System Online</span>
+      </div>
+      <div style="margin-top:4px;font-size:10px;">Wipro CoE — NMS Project 2024</div>
+    </div>
+  </aside>
+
+  <!-- ── Main ───────────────────────────────────────── -->
+  <div class="main-content">
+    <header class="top-header">
+      <div>
+        <div class="page-title">{% block page_title %}Dashboard{% endblock %}</div>
+        <div class="page-subtitle">{% block page_subtitle %}AI Network Capacity Planning System{% endblock %}</div>
+      </div>
+      <div class="header-actions">
+        <div id="live-time" class="fs-12 text-muted"></div>
+        <button class="btn-icon" title="Refresh" onclick="location.reload()">↻</button>
+        <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary)">
+          <span class="status-dot online"></span>Live
+        </div>
+      </div>
+    </header>
+
+    <main class="page-content">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<!-- ── Toast Container ──────────────────────────────── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ── Global JS ────────────────────────────────────── -->
+<script>
+// Live clock
+(function() {
+  const el = document.getElementById('live-time');
+  function tick() {
+    const now = new Date();
+    el.textContent = now.toLocaleTimeString('en-IN', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  }
+  tick(); setInterval(tick, 1000);
+})();
+
+// Toast utility
+function showToast(title, msg, type='success') {
+  const icons = {success:'✅', error:'❌', warning:'⚠️', info:'ℹ️'};
+  const tc = document.getElementById('toastContainer');
+  const t  = document.createElement('div');
+  t.className = `toast ${type}`;
+  t.innerHTML = `
+    <div class="toast-icon">${icons[type]||'ℹ️'}</div>
+    <div class="toast-body">
+      <div class="toast-title">${title}</div>
+      <div class="toast-msg">${msg}</div>
+    </div>
+  `;
+  tc.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+
+// Load alert count for sidebar badge
+async function loadAlertBadge() {
+  try {
+    const r = await fetch('/api/alerts?status=Active');
+    const d = await r.json();
+    const badge = document.getElementById('alert-badge');
+    if(d.count > 0) { badge.textContent = d.count; badge.style.display = ''; }
+    else { badge.style.display = 'none'; }
+  } catch(e){}
+}
+loadAlertBadge();
+
+// Global Chart.js defaults
+Chart.defaults.color = '#8b949e';
+Chart.defaults.borderColor = '#30363d';
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.font.size = 12;
+Chart.defaults.plugins.legend.labels.boxWidth = 12;
+Chart.defaults.plugins.legend.labels.padding = 16;
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,210 @@
+{% extends "base.html" %}
+{% block title %}AI Model Performance{% endblock %}
+{% block page_title %}🧪 AI Model Performance{% endblock %}
+{% block page_subtitle %}Machine learning model evaluation metrics and feature importance{% endblock %}
+
+{% block content %}
+<!-- ── Model Cards ─────────────────────────────────── -->
+<div class="metric-grid mb-24" style="grid-template-columns:repeat(4,1fr);">
+  {% for resource, meta in metrics_data.items() %}
+  <div class="metric-card {% if meta.get('r2', 0) > 0.85 %}green{% elif meta.get('r2', 0) > 0.7 %}yellow{% else %}red{% endif %}">
+    <div class="metric-label">{{ resource|upper }} Model</div>
+    <div class="metric-value {% if meta.get('r2', 0) > 0.85 %}green{% elif meta.get('r2', 0) > 0.7 %}yellow{% else %}red{% endif %}">
+      {{ "%.4f"|format(meta.get('r2', 0)) }}
+    </div>
+    <div class="metric-sub">R² Score</div>
+    {% if meta.get('mae') %}
+    <div style="margin-top:8px;font-size:11px;color:var(--text-muted);">
+      MAE: {{ "%.2f"|format(meta.mae) }} | RMSE: {{ "%.2f"|format(meta.rmse) }}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ── Detailed metrics table ─────────────────────── -->
+<div class="card mb-24">
+  <div class="card-header">
+    <div class="card-title">📊 Model Evaluation Metrics</div>
+    <button class="btn btn-secondary btn-sm" onclick="retrainModels()">🔄 Retrain All Models</button>
+  </div>
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr><th>Resource</th><th>Model Type</th><th>Train Samples</th><th>Test Samples</th><th>MAE</th><th>RMSE</th><th>R² Score</th><th>Quality</th><th>Trained At</th></tr>
+      </thead>
+      <tbody>
+        {% for resource, meta in metrics_data.items() %}
+        <tr>
+          <td><strong>{{ resource|upper }}</strong></td>
+          <td><span class="badge badge-purple">{{ meta.get('model_type', 'RandomForest') }}</span></td>
+          <td>{{ "{:,}".format(meta.get('train_samples', 0)) }}</td>
+          <td>{{ "{:,}".format(meta.get('test_samples', 0)) }}</td>
+          <td class="text-info">{{ "%.4f"|format(meta.get('mae', 0)) }}</td>
+          <td class="text-warning">{{ "%.4f"|format(meta.get('rmse', 0)) }}</td>
+          <td>
+            <strong class="{% if meta.get('r2', 0) > 0.85 %}text-success{% elif meta.get('r2', 0) > 0.7 %}text-warning{% else %}text-danger{% endif %}">
+              {{ "%.4f"|format(meta.get('r2', 0)) }}
+            </strong>
+          </td>
+          <td>
+            {% if meta.get('r2', 0) > 0.9 %}
+              <span class="badge badge-success">Excellent</span>
+            {% elif meta.get('r2', 0) > 0.8 %}
+              <span class="badge badge-success">Good</span>
+            {% elif meta.get('r2', 0) > 0.7 %}
+              <span class="badge badge-warning">Fair</span>
+            {% else %}
+              <span class="badge badge-danger">Poor</span>
+            {% endif %}
+          </td>
+          <td class="text-muted fs-12">{{ meta.get('trained_at', '—') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Feature Importance Charts ─────────────────── -->
+<div class="mb-16">
+  <div class="section-title mb-8">🔍 Feature Importance Analysis</div>
+  <div class="section-sub mb-16">Which input features drive each model's predictions</div>
+</div>
+<div class="chart-grid mb-24">
+  {% for resource, meta in metrics_data.items() %}
+  {% if meta.get('feature_importances') %}
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">{{ resource|upper }} — Feature Importance</div>
+    </div>
+    <div class="card-body">
+      <div class="chart-container"><canvas id="fi_{{ resource }}"></canvas></div>
+    </div>
+  </div>
+  {% endif %}
+  {% endfor %}
+</div>
+
+<!-- ── Methodology ────────────────────────────────── -->
+<div class="card mb-24">
+  <div class="card-header"><div class="card-title">📖 ML Methodology</div></div>
+  <div class="card-body">
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:24px;">
+      <div>
+        <h4 style="font-size:14px;font-weight:700;margin-bottom:8px;color:var(--accent);">Why Random Forest?</h4>
+        <ul style="font-size:13px;color:var(--text-secondary);line-height:1.8;padding-left:16px;">
+          <li>Handles non-linear daily/weekly seasonality without explicit decomposition</li>
+          <li>Robust to the spikes present in real network traffic</li>
+          <li>No GPU required — trains in seconds on 7,200+ records</li>
+          <li>Provides feature importance for explainability</li>
+          <li>Ensemble of 150 decision trees reduces overfitting</li>
+        </ul>
+      </div>
+      <div>
+        <h4 style="font-size:14px;font-weight:700;margin-bottom:8px;color:var(--accent);">Feature Engineering</h4>
+        <ul style="font-size:13px;color:var(--text-secondary);line-height:1.8;padding-left:16px;">
+          <li><strong>Temporal:</strong> Hour-of-day, day-of-week, month, day-index</li>
+          <li><strong>Lag features:</strong> lag-1, lag-2, lag-3, lag-6 timesteps</li>
+          <li><strong>Rolling stats:</strong> 3-step mean, 6-step mean, 3-step std</li>
+          <li><strong>Categorical:</strong> Device type encoded as integer</li>
+          <li><strong>Prediction:</strong> Recursive forecasting with lag updates</li>
+        </ul>
+      </div>
+      <div>
+        <h4 style="font-size:14px;font-weight:700;margin-bottom:8px;color:var(--accent);">Evaluation Metrics</h4>
+        <ul style="font-size:13px;color:var(--text-secondary);line-height:1.8;padding-left:16px;">
+          <li><strong>MAE</strong> — Mean Absolute Error (lower is better)</li>
+          <li><strong>RMSE</strong> — Root Mean Squared Error (penalizes large errors)</li>
+          <li><strong>R²</strong> — Coefficient of determination (1.0 = perfect)</li>
+        </ul>
+      </div>
+      <div>
+        <h4 style="font-size:14px;font-weight:700;margin-bottom:8px;color:var(--accent);">Forecasting Pipeline</h4>
+        <ul style="font-size:13px;color:var(--text-secondary);line-height:1.8;padding-left:16px;">
+          <li>Load historical data from SQLite</li>
+          <li>Engineer lag + rolling features per device</li>
+          <li>Train Random Forest on 80% data, test on 20%</li>
+          <li>Recursive prediction: feed output back as new lag</li>
+          <li>Clamp predictions to valid range (0–99%)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Model Performance Chart ────────────────────── -->
+<div class="card">
+  <div class="card-header"><div class="card-title">📈 R² Score Comparison</div></div>
+  <div class="card-body">
+    <div class="chart-container" style="max-height:200px;"><canvas id="r2CompareChart"></canvas></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const metricsData = {{ metrics_data | tojson }};
+
+// R² comparison bar chart
+const resources = Object.keys(metricsData);
+const r2vals    = resources.map(r => +(metricsData[r].r2||0).toFixed(4));
+const r2colors  = r2vals.map(v => v>0.85?'rgba(63,185,80,0.7)':v>0.7?'rgba(210,153,34,0.7)':'rgba(248,81,73,0.7)');
+
+new Chart(document.getElementById('r2CompareChart'), {
+  type: 'bar',
+  data: { labels: resources.map(r=>r.toUpperCase()),
+    datasets:[{ label:'R² Score', data:r2vals, backgroundColor:r2colors, borderRadius:4 }]},
+  options: { responsive:true, maintainAspectRatio:true,
+    scales:{ y:{ min:0, max:1, ticks:{callback:v=>v.toFixed(1)} }},
+    plugins:{ legend:{display:false} }
+  }
+});
+
+// Feature importance charts
+const FEATURE_LABELS = {
+  hour:'Hour', dow:'Day-of-Week', month:'Month', day_index:'Day Index',
+  lag_1:'Lag-1', lag_2:'Lag-2', lag_3:'Lag-3', lag_6:'Lag-6',
+  roll_mean_3:'Roll Mean 3', roll_mean_6:'Roll Mean 6',
+  roll_std_3:'Roll Std 3', device_type_enc:'Device Type'
+};
+
+Object.entries(metricsData).forEach(([resource, meta]) => {
+  if(!meta.feature_importances) return;
+  const fi = meta.feature_importances;
+  const sorted = Object.entries(fi).sort((a,b)=>b[1]-a[1]);
+  const labels = sorted.map(([k])=>FEATURE_LABELS[k]||k);
+  const vals   = sorted.map(([,v])=>+(v*100).toFixed(2));
+  const canvas = document.getElementById(`fi_${resource}`);
+  if(!canvas) return;
+  new Chart(canvas, {
+    type:'bar',
+    data:{ labels, datasets:[{ label:'Importance %', data:vals,
+      backgroundColor:'rgba(47,129,247,0.6)', borderRadius:4 }]},
+    options:{ responsive:true, maintainAspectRatio:true, indexAxis:'y',
+      scales:{ x:{ ticks:{callback:v=>v.toFixed(0)+'%'} } },
+      plugins:{ legend:{display:false} }
+    }
+  });
+});
+
+async function retrainModels() {
+  if(!confirm('Retraining may take 30–60 seconds. Continue?')) return;
+  showToast('Retraining', 'Models are being retrained…', 'info');
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = '⏳ Training…';
+  try {
+    const r = await fetch('/api/model/retrain', {method:'POST'});
+    const j = await r.json();
+    if(j.status==='ok') {
+      showToast('Done', 'Models retrained successfully. Refreshing…', 'success');
+      setTimeout(()=>location.reload(), 1500);
+    } else {
+      showToast('Error', j.message, 'error');
+    }
+  } finally {
+    btn.disabled = false; btn.textContent = '🔄 Retrain All Models';
+  }
+}
+</script>
+{% endblock %}

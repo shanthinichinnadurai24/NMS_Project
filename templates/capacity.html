@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}Capacity Planning{% endblock %}
+{% block page_title %}⚡ Capacity Planning{% endblock %}
+{% block page_subtitle %}30-day resource capacity forecast and expansion planning{% endblock %}
+
+{% block content %}
+<!-- ── Controls ──────────────────────────────────── -->
+<div class="section-header mb-16">
+  <div>
+    <div class="section-title">Capacity Analysis</div>
+    <div class="section-sub">Predicted vs. available capacity for all devices</div>
+  </div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;">
+    <select id="capFilter" class="form-select" style="width:140px;" onchange="filterTable()">
+      <option value="">All Status</option>
+      <option value="SAFE">SAFE</option>
+      <option value="WARNING">WARNING</option>
+      <option value="CRITICAL">CRITICAL</option>
+    </select>
+    <button class="btn btn-primary" onclick="loadCapacity()">🔄 Refresh Analysis</button>
+  </div>
+</div>
+
+<!-- ── Summary cards ─────────────────────────────── -->
+<div class="metric-grid mb-24" style="grid-template-columns:repeat(3,1fr);" id="capSummary">
+  <div class="metric-card green"><div class="metric-label">SAFE</div><div class="metric-value green" id="cntSafe">—</div><div class="metric-sub">Devices within capacity</div></div>
+  <div class="metric-card yellow"><div class="metric-label">WARNING</div><div class="metric-value yellow" id="cntWarn">—</div><div class="metric-sub">Approaching capacity limit</div></div>
+  <div class="metric-card red"><div class="metric-label">CRITICAL</div><div class="metric-value red" id="cntCrit">—</div><div class="metric-sub">Capacity expansion needed</div></div>
+</div>
+
+<!-- ── Loading ────────────────────────────────────── -->
+<div id="capLoading">
+  <div class="loading-state"><div class="spinner"></div>Running capacity analysis for all devices…</div>
+</div>
+
+<!-- ── Table ─────────────────────────────────────── -->
+<div class="card mb-24" id="capTable" style="display:none;">
+  <div class="table-container">
+    <table>
+      <thead>
+        <tr>
+          <th>Device</th><th>Type</th>
+          <th>CPU Predicted</th><th>CPU Status</th>
+          <th>Mem Predicted</th><th>Mem Status</th>
+          <th>BW Predicted</th><th>BW Status</th>
+          <th>Growth</th><th>Overall</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="capBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ── Capacity Charts ────────────────────────────── -->
+<div class="chart-grid mb-24" id="capCharts" style="display:none;">
+  <div class="card">
+    <div class="card-header"><div class="card-title">📊 Predicted CPU by Device</div></div>
+    <div class="card-body"><div class="chart-container"><canvas id="capCpuChart"></canvas></div></div>
+  </div>
+  <div class="card">
+    <div class="card-header"><div class="card-title">📊 Predicted Memory by Device</div></div>
+    <div class="card-body"><div class="chart-container"><canvas id="capMemChart"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ── Recommendations ───────────────────────────── -->
+<div class="card" id="capRecs" style="display:none;">
+  <div class="card-header"><div class="card-title">💡 Capacity Recommendations</div></div>
+  <div class="card-body" id="recsBody"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let capData = [];
+
+const statusBadge = s => ({
+  SAFE:     '<span class="badge badge-success">✅ SAFE</span>',
+  WARNING:  '<span class="badge badge-warning">⚠️ WARNING</span>',
+  CRITICAL: '<span class="badge badge-danger">🔴 CRITICAL</span>',
+}[s] || '<span class="badge badge-secondary">—</span>');
+
+function worstStatus(row) {
+  const statuses = ['cpu_status','mem_status','bw_status'].map(k=>row[k]).filter(Boolean);
+  if(statuses.includes('CRITICAL')) return 'CRITICAL';
+  if(statuses.includes('WARNING'))  return 'WARNING';
+  return 'SAFE';
+}
+
+async function loadCapacity(force=false) {
+  document.getElementById('capLoading').style.display = '';
+  document.getElementById('capTable').style.display   = 'none';
+  document.getElementById('capCharts').style.display  = 'none';
+  document.getElementById('capRecs').style.display    = 'none';
+
+  try {
+    const url = force ? '/api/capacity?force=true' : '/api/capacity';
+    const r = await fetch(url);
+    const j = await r.json();
+    capData  = j.data || [];
+
+    // Normalise keys
+    capData = capData.map(d => ({
+      ...d,
+      cpu_status: d.cpu_status || d['cpu_status'] || 'SAFE',
+      mem_status: d.memory_status || d['memory_status'] || d['mem_status'] || 'SAFE',
+      bw_status:  d.bandwidth_status || d['bandwidth_status'] || d['bw_status'] || 'SAFE',
+      cpu_pred:   d.cpu_predicted    || 0,
+      mem_pred:   d.memory_predicted || 0,
+      bw_pred:    d.bandwidth_predicted || 0,
+      cpu_growth: d.cpu_growth    || 0,
+      mem_growth: d.memory_growth || 0,
+    }));
+
+    renderTable(capData);
+    renderCharts(capData);
+    renderRecs(capData);
+
+    // Summary counts
+    const cnt = { SAFE:0, WARNING:0, CRITICAL:0 };
+    capData.forEach(d => cnt[worstStatus(d)]++);
+    document.getElementById('cntSafe').textContent = cnt.SAFE;
+    document.getElementById('cntWarn').textContent = cnt.WARNING;
+    document.getElementById('cntCrit').textContent = cnt.CRITICAL;
+
+    document.getElementById('capTable').style.display  = '';
+    document.getElementById('capCharts').style.display = '';
+    document.getElementById('capRecs').style.display   = '';
+  } catch(e) {
+    showToast('Capacity Error', 'Failed to load capacity analysis', 'error');
+  } finally {
+    document.getElementById('capLoading').style.display = 'none';
+  }
+}
+
+function renderTable(data) {
+  const tbody = document.getElementById('capBody');
+  tbody.innerHTML = data.map(d => {
+    const overall = worstStatus(d);
+    const avgGrowth = (((+d.cpu_growth||0) + (+d.mem_growth||0)) / 2).toFixed(1);
+    return `<tr data-status="${overall}">
+      <td><strong>${d.device_name}</strong></td>
+      <td><span class="badge badge-info">${d.device_type}</span></td>
+      <td><span class="${d.cpu_status==='CRITICAL'?'text-danger':d.cpu_status==='WARNING'?'text-warning':'text-success'}">${(+d.cpu_pred).toFixed(1)}%</span></td>
+      <td>${statusBadge(d.cpu_status)}</td>
+      <td><span class="${d.mem_status==='CRITICAL'?'text-danger':d.mem_status==='WARNING'?'text-warning':'text-success'}">${(+d.mem_pred).toFixed(1)}%</span></td>
+      <td>${statusBadge(d.mem_status)}</td>
+      <td><span class="${d.bw_status==='CRITICAL'?'text-danger':d.bw_status==='WARNING'?'text-warning':'text-success'}">${(+d.bw_pred).toFixed(1)}%</span></td>
+      <td>${statusBadge(d.bw_status)}</td>
+      <td><span class="${avgGrowth>10?'text-warning':avgGrowth>0?'text-success':'text-muted'}">+${avgGrowth}%</span></td>
+      <td>${statusBadge(overall)}</td>
+      <td><a href="/forecasting" class="btn btn-secondary btn-sm">📊 Forecast</a></td>
+    </tr>`;
+  }).join('');
+}
+
+function filterTable() {
+  const f = document.getElementById('capFilter').value;
+  document.querySelectorAll('#capBody tr').forEach(row => {
+    row.style.display = (!f || row.dataset.status === f) ? '' : 'none';
+  });
+}
+
+let cpuCapChart=null, memCapChart=null;
+function renderCharts(data) {
+  const labels = data.map(d=>d.device_name.replace(/^(Core-|Dist-|Edge-|App-|WiFi-|DB-)/,'').substring(0,10));
+  const cpuVals = data.map(d=>(+d.cpu_pred).toFixed(1));
+  const memVals = data.map(d=>(+d.mem_pred).toFixed(1));
+  const cpuColors = data.map(d=>d.cpu_status==='CRITICAL'?'rgba(248,81,73,0.7)':d.cpu_status==='WARNING'?'rgba(210,153,34,0.7)':'rgba(63,185,80,0.7)');
+  const memColors = data.map(d=>d.mem_status==='CRITICAL'?'rgba(248,81,73,0.7)':d.mem_status==='WARNING'?'rgba(210,153,34,0.7)':'rgba(63,185,80,0.7)');
+
+  if(cpuCapChart) cpuCapChart.destroy();
+  cpuCapChart = new Chart(document.getElementById('capCpuChart'), {
+    type:'bar', data:{ labels, datasets:[{ label:'Predicted CPU %', data:cpuVals,
+      backgroundColor:cpuColors, borderRadius:4 }]},
+    options:{ responsive:true, maintainAspectRatio:true,
+      scales:{ x:{ticks:{maxRotation:40}}, y:{min:0,max:100, ticks:{callback:v=>v+'%'},
+        grid:{ color: ctx => ctx.tick.value===85?'rgba(248,81,73,0.4)':ctx.tick.value===70?'rgba(210,153,34,0.4)':'#30363d' }
+      }},
+      plugins:{ legend:{display:false} }
+    }
+  });
+
+  if(memCapChart) memCapChart.destroy();
+  memCapChart = new Chart(document.getElementById('capMemChart'), {
+    type:'bar', data:{ labels, datasets:[{ label:'Predicted Memory %', data:memVals,
+      backgroundColor:memColors, borderRadius:4 }]},
+    options:{ responsive:true, maintainAspectRatio:true,
+      scales:{ x:{ticks:{maxRotation:40}}, y:{min:0,max:100, ticks:{callback:v=>v+'%'}}},
+      plugins:{ legend:{display:false} }
+    }
+  });
+}
+
+function renderRecs(data) {
+  const critical = data.filter(d=>worstStatus(d)==='CRITICAL');
+  const warning  = data.filter(d=>worstStatus(d)==='WARNING');
+  const safe     = data.filter(d=>worstStatus(d)==='SAFE');
+  const sections = [
+    { label:'🔴 Critical — Immediate Action Required', items:critical, color:'var(--red)' },
+    { label:'⚠️ Warning — Plan Upgrade Soon',          items:warning,  color:'var(--yellow)' },
+    { label:'✅ Safe — No Action Required',             items:safe,     color:'var(--green)' },
+  ];
+  document.getElementById('recsBody').innerHTML = sections.map(sec => `
+    <div style="margin-bottom:16px;">
+      <div style="font-weight:700;font-size:14px;color:${sec.color};margin-bottom:8px;">${sec.label}</div>
+      ${sec.items.length===0?'<div class="text-muted fs-12">None</div>':
+        sec.items.map(d=>`
+          <div style="padding:10px 14px;background:var(--bg-tertiary);border-radius:8px;margin-bottom:6px;border:1px solid var(--border);display:flex;align-items:flex-start;gap:10px;">
+            <div style="flex:1;">
+              <strong>${d.device_name}</strong> <span class="badge badge-info" style="margin-left:6px;">${d.device_type}</span>
+              <div class="text-muted fs-12" style="margin-top:4px;">
+                CPU:${(+d.cpu_pred).toFixed(1)}% | Mem:${(+d.mem_pred).toFixed(1)}% | BW:${(+d.bw_pred).toFixed(1)}%
+              </div>
+            </div>
+            <a href="/forecasting" class="btn btn-secondary btn-sm">View Forecast</a>
+          </div>`).join('')
+      }
+    </div>`).join('');
+}
+
+loadCapacity();
+</script>
+{% endblock %}

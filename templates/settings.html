@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}⚙️ Settings{% endblock %}
+{% block page_subtitle %}System configuration and preferences{% endblock %}
+
+{% block content %}
+<div style="max-width:800px;">
+
+  <!-- System Info -->
+  <div class="card mb-24">
+    <div class="card-header"><div class="card-title">ℹ️ System Information</div></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;">
+        <div style="padding:14px;background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border);">
+          <div class="text-muted fs-12 fw-600" style="text-transform:uppercase;margin-bottom:6px;">Application</div>
+          <div style="font-size:14px;font-weight:600;">AI Network Capacity Planning System</div>
+          <div class="text-muted fs-12">Version 1.0.0 | Wipro CoE NMS Project</div>
+        </div>
+        <div style="padding:14px;background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border);">
+          <div class="text-muted fs-12 fw-600" style="text-transform:uppercase;margin-bottom:6px;">Backend</div>
+          <div style="font-size:14px;font-weight:600;">Python Flask</div>
+          <div class="text-muted fs-12">SQLite Database | REST API</div>
+        </div>
+        <div style="padding:14px;background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border);">
+          <div class="text-muted fs-12 fw-600" style="text-transform:uppercase;margin-bottom:6px;">ML Engine</div>
+          <div style="font-size:14px;font-weight:600;">Random Forest Regressor</div>
+          <div class="text-muted fs-12">Scikit-learn | 150 estimators</div>
+        </div>
+        <div style="padding:14px;background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border);">
+          <div class="text-muted fs-12 fw-600" style="text-transform:uppercase;margin-bottom:6px;">Dataset</div>
+          <div style="font-size:14px;font-weight:600;" id="dsInfo">Loading…</div>
+          <div class="text-muted fs-12">60-day synthetic historical data</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Thresholds -->
+  <div class="card mb-24">
+    <div class="card-header"><div class="card-title">🎯 Capacity Thresholds</div><span class="badge badge-secondary">Read-only</span></div>
+    <div class="card-body">
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--green-bg);border-radius:8px;border:1px solid rgba(63,185,80,0.3);">
+          <span style="color:var(--green);font-size:20px;">✅</span>
+          <div><div style="font-weight:600;color:var(--green);">SAFE</div><div class="text-muted fs-12">Utilization below 70% — no action required</div></div>
+          <span class="badge badge-success" style="margin-left:auto;">0–69%</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--yellow-bg);border-radius:8px;border:1px solid rgba(210,153,34,0.3);">
+          <span style="color:var(--yellow);font-size:20px;">⚠️</span>
+          <div><div style="font-weight:600;color:var(--yellow);">WARNING</div><div class="text-muted fs-12">Utilization 70–84% — plan upgrade within 30 days</div></div>
+          <span class="badge badge-warning" style="margin-left:auto;">70–84%</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--red-bg);border-radius:8px;border:1px solid rgba(248,81,73,0.3);">
+          <span style="color:var(--red);font-size:20px;">🔴</span>
+          <div><div style="font-weight:600;color:var(--red);">CRITICAL</div><div class="text-muted fs-12">Utilization 85%+ — immediate action required</div></div>
+          <span class="badge badge-danger" style="margin-left:auto;">85–100%</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Model Actions -->
+  <div class="card mb-24">
+    <div class="card-header"><div class="card-title">🤖 ML Model Management</div></div>
+    <div class="card-body" style="display:flex;flex-direction:column;gap:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border);">
+        <div>
+          <div style="font-weight:600;">Retrain All Models</div>
+          <div class="text-muted fs-12">Force retrain Random Forest models on latest data (~30 sec)</div>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="retrainModels()">🔄 Retrain</button>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border);">
+        <div>
+          <div style="font-weight:600;">Regenerate Alerts</div>
+          <div class="text-muted fs-12">Re-run risk detection on all devices using latest forecasts</div>
+        </div>
+        <button class="btn btn-warning btn-sm" onclick="regenAlerts()">🚨 Regenerate</button>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--bg-tertiary);border-radius:8px;border:1px solid var(--border);">
+        <div>
+          <div style="font-weight:600;">Export All Metrics</div>
+          <div class="text-muted fs-12">Download full network metrics dataset as CSV</div>
+        </div>
+        <a href="/api/reports/export/csv" class="btn btn-success btn-sm">⬇️ Download CSV</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Reference -->
+  <div class="card">
+    <div class="card-header"><div class="card-title">🔌 API Endpoints Reference</div></div>
+    <div class="card-body">
+      <div id="apiRef" style="display:flex;flex-direction:column;gap:6px;font-size:12px;"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const API_ENDPOINTS = [
+  ['GET',    '/api/devices',                 'List all devices'],
+  ['POST',   '/api/devices',                 'Add a new device'],
+  ['GET',    '/api/devices/:id',             'Get device details'],
+  ['PUT',    '/api/devices/:id',             'Update device'],
+  ['DELETE', '/api/devices/:id',             'Delete device'],
+  ['GET',    '/api/metrics',                 'Get metrics (filterable)'],
+  ['GET',    '/api/metrics/:device_id',      'Get metrics for device'],
+  ['GET',    '/api/forecast/:device_id',     'Run ML forecast'],
+  ['GET',    '/api/capacity',                'Capacity analysis all devices'],
+  ['GET',    '/api/capacity/:device_id',     'Capacity for one device'],
+  ['GET',    '/api/alerts',                  'Get alerts'],
+  ['POST',   '/api/alerts/generate',         'Generate new alerts'],
+  ['POST',   '/api/alerts/:id/resolve',      'Resolve an alert'],
+  ['GET',    '/api/model/performance',       'Model metrics'],
+  ['POST',   '/api/model/retrain',           'Retrain models'],
+  ['GET',    '/api/reports/export/csv',      'Export metrics CSV'],
+  ['GET',    '/api/reports/summary',         'Report summary'],
+  ['GET',    '/api/reports/capacity_summary','Capacity report'],
+];
+const METHOD_COLORS = {
+  GET:    {bg:'rgba(63,185,80,0.15)',  fg:'#3fb950'},
+  POST:   {bg:'rgba(47,129,247,0.15)', fg:'#2f81f7'},
+  PUT:    {bg:'rgba(210,153,34,0.15)', fg:'#d29922'},
+  DELETE: {bg:'rgba(248,81,73,0.15)', fg:'#f85149'},
+};
+document.getElementById('apiRef').innerHTML = API_ENDPOINTS.map(([m,p,d]) => {
+  const c = METHOD_COLORS[m] || METHOD_COLORS.GET;
+  return `<div style="display:flex;align-items:center;gap:10px;padding:7px 10px;background:var(--bg-tertiary);border-radius:6px;font-family:monospace;">
+    <span style="background:${c.bg};color:${c.fg};padding:2px 8px;border-radius:4px;font-weight:700;min-width:52px;text-align:center;">${m}</span>
+    <span style="color:var(--text-primary);flex:1;">${p}</span>
+    <span style="color:var(--text-muted);font-family:sans-serif;">${d}</span>
+  </div>`;
+}).join('');
+
+async function loadDbInfo() {
+  try {
+    const r = await fetch('/api/metrics?limit=1');
+    const j = await r.json();
+    const r2 = await fetch('/api/devices');
+    const j2 = await r2.json();
+    document.getElementById('dsInfo').textContent =
+      `${j2.count} devices, ${j.count>0?'7,200+':'0'} metric records`;
+  } catch(e){}
+}
+
+async function retrainModels() {
+  if(!confirm('Retrain all models? This takes ~30 seconds.')) return;
+  showToast('Training', 'Retraining models…', 'info');
+  const r = await fetch('/api/model/retrain', {method:'POST'});
+  const j = await r.json();
+  showToast(j.status==='ok'?'Done':'Error', j.message, j.status==='ok'?'success':'error');
+}
+
+async function regenAlerts() {
+  showToast('Alerts', 'Regenerating alerts…', 'info');
+  const r = await fetch('/api/alerts/generate', {method:'POST'});
+  const j = await r.json();
+  showToast(j.status==='ok'?'Done':'Error', j.message, j.status==='ok'?'success':'error');
+}
+
+loadDbInfo();
+</script>
+{% endblock %}
